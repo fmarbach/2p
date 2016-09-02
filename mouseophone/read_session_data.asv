@@ -1,0 +1,135 @@
+%% new analysis with foopsi
+
+clear;clc
+basedir=uigetdir('D:\2p_data');
+addpath('D:\Uri_code\2p_code\dept')
+
+[~,sessionName]=fileparts(basedir);
+
+
+load([basedir filesep sessionName '.mat'])
+
+[vec,tr ]=dj_trial_extract(dj);
+
+
+% chosenRois
+foopsiOP=dir([basedir filesep  'chosenRois.mat']);
+foopsiOP=load([basedir filesep foopsiOP.name]);
+S_df=real(foopsiOP.S);
+C_df=foopsiOP.C;
+% foopsiOP=dir([basedir filesep  'ds*']);
+% b=load([basedir filesep foopsiOP.name]);
+
+regmat=dir([basedir filesep  't1_00reg*']);
+regmat=load([basedir filesep regmat.name]);
+
+nextFileVecInd=find(diff(vec.sync)==1);%% find the time at which the sync went up
+%%% init stuff 
+syncVec=nan(size(vec.sync));
+syncFrame=nan(size(S_df,2),1);
+FrameOrigTime=nan(size(S_df,2),1);
+
+
+length(nextFileVecInd)
+
+for ii=1:min([size(regmat.results{1},1) length(nextFileVecInd)])
+if ii==1 %% first file just init timers
+    lastFrame=regmat.results{1}(ii).frameInd(end);
+elseif ii==size(regmat.results{1},1)%% last on
+    framesNow=regmat.results{1}(ii).frameInd+lastFrame;
+    timeNow=regmat.results{1}(ii).frameTimeStamps;
+    FrameOrigTime(framesNow)=timeNow;
+    timeVec(framesNow)=timeNow;
+else %% any other one
+    framesNow=regmat.results{1}(ii).frameInd+lastFrame;
+    timeNow=regmat.results{1}(ii).frameTimeStamps;
+    FrameOrigTime(framesNow)=timeNow;
+    
+%     MatchSyncByTime=round(timeNow(1)/10);
+%     bhinx=MatchSyncByTime;  %%% Use this one to sunc by pulse timing
+
+
+bhinx=ii;    %%% Use this one if no sync pulse are missing
+    
+    timeBh=vec.t(nextFileVecInd(bhinx-1):nextFileVecInd(bhinx)-1);
+    %%% the frame of each behavioral sample in imaging
+%     syncVec(nextFileVecInd(ii-1):nextFileVecInd(ii)-1)=interp1(framesNow,timeNow,linspace(framesNow(1),framesNow(end),length(timeBh)));
+    
+%%% nearest frame in beh clock
+syncVec(nextFileVecInd(bhinx-1):nextFileVecInd(bhinx)-1)=interp1(framesNow,framesNow,linspace(framesNow(1),framesNow(end),length(timeBh)));
+    %%% the sample of behavior fof each frame
+    syncFrame(framesNow)=round(linspace(nextFileVecInd(bhinx-1),nextFileVecInd(bhinx)-1,length(framesNow)));%% time of each frame in bh
+    lastFrame=framesNow(end);
+    %%% time vector
+    timeVec(framesNow)=timeNow;
+end
+end
+
+imagingSR=inv(median(diff(timeVec)));
+%% simple psth
+win=-23:24;
+winAx=(1000/imagingSR)*win';
+
+order_array=[12 21];
+for oo=1:2
+    rewardFrames{oo}=round(syncVec(find(vec.reward==1 & vec.ch2_order==order_array(oo))));
+    rewardFrames{oo}(isnan(rewardFrames{oo}))=[];
+    rewardFrames{oo}(rewardFrames{oo}<win(end))=[];
+end
+
+
+limTrialNum=min(cellfun(@length,rewardFrames));
+limTrialNum=80;
+
+for rr=1:size(C_df,1)
+    f1=figure(1);clf;
+    figureSet(f1,4,4);
+    for oo=1:2
+        roinow=C_df(rr,:);
+        
+        rasterInx=bsxfun(@plus,rewardFrames{oo}(1:limTrialNum),win);
+        raster=roinow(rasterInx);
+        h1(oo)=subplot(2,2,oo+2)
+        imagesc(winAx,1:size(raster,1),raster)
+        h1(oo).YDir='normal';
+        colormap(flipud(colormap('gray')))
+        axis tight square;box off
+        
+        roinow=C_df(rr,:);
+        rasterInx=bsxfun(@plus,rewardFrames{oo}(1:limTrialNum),win);
+        raster=roinow(rasterInx);
+        rasterSteped=bsxfun(@plus,raster,0.15*[1:size(raster,1)]')';
+        h2(oo)=subplot(2,2,oo);
+        plot(winAx,rasterSteped,'k');axis tight square off;box off
+        
+    end
+    eqAxC(h1);eqAx('both',h2);title(rr);
+%     saveas(f1,['figureTemp' filesep '4RastersBar_' num2str(rr) '.pdf'])
+pause
+end
+
+%% psth traces
+
+win=-49:50;
+winAx=(1000/imagingSR)*win
+order_array=[12 21];
+for oo=1:2
+  rewardFrames{oo}=round(syncVec(find(vec.reward==1 & vec.ch2_order==order_array(oo))));  
+  rewardFrames{oo}(isnan(rewardFrames{oo}))=[];
+  rewardFrames{oo}(rewardFrames{oo}<win(end))=[];
+end
+
+
+for rr=1:size(S_df,1)
+    for oo=1:2
+    roinow=C_df(rr,:);
+
+    rasterInx=bsxfun(@plus,rewardFrames{oo},win);
+    raster=roinow(rasterInx);
+    rasterSteped=bsxfun(@plus,raster,[1:size(raster,1)]')';
+    subplot(1,2,oo)
+    plot(rasterSteped,'k');axis tight;box off
+    end
+title(rr);
+    pause
+end
